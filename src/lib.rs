@@ -1,4 +1,5 @@
 use edit::{edit_file, Builder};
+use owo_colors::OwoColorize;
 use slug::slugify;
 use std::{
     fs,
@@ -32,9 +33,23 @@ pub fn write(garden_path: PathBuf, title: Option<String>) -> Result<(), std::io:
     }
     .map(|title| slugify(title))?;
 
-    let mut dest = garden_path.join(filename);
-    dest.set_extension("md");
-    fs::rename(filepath, &dest)?;
+    for attempt in 0.. {
+        let mut dest = garden_path.join(if attempt == 0 {
+            filename.clone()
+        } else {
+            format!("{filename}-{:02}", attempt)
+        });
+
+        dest.set_extension("md");
+
+        if dest.exists() {
+            continue;
+        }
+
+        fs::rename(filepath, &dest)?;
+
+        break;
+    }
 
     Ok(())
 }
@@ -42,7 +57,9 @@ pub fn write(garden_path: PathBuf, title: Option<String>) -> Result<(), std::io:
 fn ask_for_filename() -> io::Result<String> {
     rprompt::prompt_reply(
         "Enter filename
-> ",
+> "
+        .blue()
+        .bold(),
     )
 }
 
@@ -53,8 +70,9 @@ fn confirm_filename(raw_title: &str) -> io::Result<String> {
         // the code
         let result = rprompt::prompt_reply(&format!(
             "current title {}
-Do you want a different title? (y/N): ",
-            &raw_title,
+Do you want a different title? (y/{}): ",
+            &raw_title.bold().green(),
+            "N".bold()
         ))?;
 
         match result.as_str() {
