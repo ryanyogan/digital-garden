@@ -1,7 +1,28 @@
-use assert_fs::prelude::*;
+use assert_fs::{prelude::*, TempDir};
 use predicates::prelude::*;
 use rexpect::session::spawn_command;
 use std::{error::Error, process::Command};
+
+#[cfg(not(target_os = "windows"))]
+fn setup_command() -> Result<(Command, TempDir), Box<dyn Error>> {
+    let temp_dir = assert_fs::TempDir::new()?;
+
+    let bin_path = assert_cmd::cargo::cargo_bin("garden");
+    let fake_editor_path = std::env::current_dir()?
+        .join("tests")
+        .join("fake-editor.sh");
+
+    if !fake_editor_path.exists() {
+        panic!("fake editor shell script could not be found")
+    }
+
+    let mut cmd = Command::new(bin_path);
+    cmd.env("EDITOR", fake_editor_path.into_os_string())
+        .env("GARDEN_PATH", temp_dir.path())
+        .env("NO_COLOR", "true");
+
+    Ok((cmd, temp_dir))
+}
 
 // make sure help runs.  This indicates the binary works
 #[test]
@@ -26,26 +47,12 @@ fn test_write_help() {
         .stderr("");
 }
 
+#[cfg(not(target_os = "windows"))]
 #[test]
 fn test_write_with_title() -> Result<(), Box<dyn Error>> {
-    let temp_dir = assert_fs::TempDir::new()?;
+    let (mut cmd, temp_dir) = setup_command()?;
 
-    let bin_path = assert_cmd::cargo::cargo_bin("garden");
-    let fake_editor_path = std::env::current_dir()?
-        .join("tests")
-        .join("fake-editor.sh");
-
-    if !fake_editor_path.exists() {
-        panic!("fake editor shell script could not be found")
-    }
-
-    let mut cmd = Command::new(bin_path);
-    cmd.env("EDITOR", fake_editor_path.into_os_string())
-        .env("GARDEN_PATH", temp_dir.path())
-        .env("NO_COLOR", "true")
-        .arg("write")
-        .arg("-t")
-        .arg("atitle");
+    cmd.arg("write").arg("-t").arg("atitle");
 
     let mut process = spawn_command(cmd, Some(30000))?;
 
