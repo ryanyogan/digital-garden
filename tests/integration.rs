@@ -1,8 +1,28 @@
 use assert_fs::{prelude::*, TempDir};
 use predicates::prelude::*;
-use rexpect::session::spawn_command;
+use rexpect::session::{spawn_command, PtySession};
 use std::{error::Error, process::Command};
 
+trait GardenExpectations {
+    fn exp_title(&mut self, title: &str) -> Result<(), rexpect::error::Error>;
+}
+
+impl GardenExpectations for PtySession {
+    fn exp_title(&mut self, title: &str) -> Result<(), rexpect::error::Error> {
+        self.exp_string("current title: ")?;
+        self.exp_string(title)?;
+        self.exp_regex("\\s*")?;
+        self.exp_string("Do you want a different title? (y/N): ")?;
+
+        Ok(())
+    }
+}
+
+/// Okay so what we are doing here is we are doing the following:
+/// 1. Creating a temp directory and a temp file
+/// 2. We are invoking an editor, which is just echoing back nonsense ;)
+/// 3. We are saying NO_COLOR as an ENV, we would need to decode that...
+/// 4. Return a tuple in the result with a command and the temp_dir, pass owner...
 #[cfg(not(target_os = "windows"))]
 fn setup_command() -> Result<(Command, TempDir), Box<dyn Error>> {
     let temp_dir = assert_fs::TempDir::new()?;
@@ -56,15 +76,31 @@ fn test_write_with_title() -> Result<(), Box<dyn Error>> {
 
     let mut process = spawn_command(cmd, Some(30000))?;
 
-    process.exp_string("current title: ")?;
-    process.exp_string("atitle")?;
-    process.exp_regex("\\s*")?;
-    process.exp_string("Do you want a different title? (y/N): ")?;
+    process.exp_title("atitle")?;
     process.send_line("N")?;
     process.exp_eof()?;
 
     temp_dir
         .child("atitle.md")
+        .assert(predicate::path::exists());
+
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn test_write_with_written_title() -> Result<(), Box<dyn Error>> {
+    let (mut cmd, temp_dir) = setup_command()?;
+    cmd.arg("write");
+
+    let mut process = spawn_command(cmd, Some(30000))?;
+
+    process.exp_title("testing")?;
+    process.send_line("N")?;
+    process.exp_eof()?;
+
+    temp_dir
+        .child("testing.md")
         .assert(predicate::path::exists());
 
     Ok(())
